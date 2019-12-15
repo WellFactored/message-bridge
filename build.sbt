@@ -22,6 +22,7 @@ lazy val root = (project in file("."))
     addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.0")
   )
 
+
 scalacOptions ++= Seq(
   "-deprecation",
   "-encoding", "UTF-8",
