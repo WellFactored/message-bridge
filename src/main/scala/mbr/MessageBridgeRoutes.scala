@@ -1,11 +1,11 @@
-package mgw
+package mbr
 
 import cats.effect.Sync
 import cats.implicits._
 import org.http4s.HttpRoutes
 import org.http4s.dsl.Http4sDsl
 
-object MessagegatewayRoutes {
+object MessageBridgeRoutes {
 
   def jokeRoutes[F[_]: Sync](J: Jokes[F]): HttpRoutes[F] = {
     val dsl = new Http4sDsl[F]{}

@@ -6,7 +6,7 @@ val LogbackVersion = "1.2.3"
 lazy val root = (project in file("."))
   .settings(
     organization := "com.wellfactored",
-    name := "message-gateway",
+    name := "message-bridge",
     version := "0.0.1-SNAPSHOT",
     scalaVersion := "2.12.10",
     libraryDependencies ++= Seq(
