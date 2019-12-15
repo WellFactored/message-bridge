@@ -1,34 +1,37 @@
-val Http4sVersion = "0.21.0-M6"
-val CirceVersion = "0.12.3"
-val Specs2Version = "4.1.0"
-val LogbackVersion = "1.2.3"
+val Http4sVersion    = "0.21.0-M6"
+val CirceVersion     = "0.12.3"
+val Specs2Version    = "4.1.0"
+val LogbackVersion   = "1.2.3"
+val tapirVersion     = "0.12.8"
+val awsClientVersion = "1.11.693"
 
 lazy val root = (project in file("."))
   .settings(
     organization := "com.wellfactored",
     name := "message-bridge",
     version := "0.0.1-SNAPSHOT",
-    scalaVersion := "2.12.10",
+    scalaVersion := "2.13.1",
     libraryDependencies ++= Seq(
-      "org.http4s"      %% "http4s-blaze-server" % Http4sVersion,
-      "org.http4s"      %% "http4s-blaze-client" % Http4sVersion,
-      "org.http4s"      %% "http4s-circe"        % Http4sVersion,
-      "org.http4s"      %% "http4s-dsl"          % Http4sVersion,
-      "io.circe"        %% "circe-generic"       % CirceVersion,
-      "org.specs2"      %% "specs2-core"         % Specs2Version % "test",
-      "ch.qos.logback"  %  "logback-classic"     % LogbackVersion
+      "com.amazonaws"               % "aws-java-sdk-sqs"     % awsClientVersion,
+      "dev.profunktor"              %% "fs2-rabbit"          % "2.1.0",
+      "io.circe"                    %% "circe-generic"       % CirceVersion,
+      "com.softwaremill.sttp.tapir" %% "tapir-core"          % tapirVersion,
+      "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
+      "com.softwaremill.sttp.tapir" %% "tapir-json-circe"    % tapirVersion,
+      "io.chrisdavenport"           %% "log4cats-core"       % "1.0.1",
+      "ch.qos.logback"              % "logback-classic"      % LogbackVersion
     ),
     addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.10.3"),
-    addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.0")
+    addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.1")
   )
-
 
 scalacOptions ++= Seq(
   "-deprecation",
-  "-encoding", "UTF-8",
+  "-encoding",
+  "UTF-8",
   "-language:higherKinds",
   "-language:postfixOps",
   "-feature",
   "-Ypartial-unification",
-  "-Xfatal-warnings",
+  "-Xfatal-warnings"
 )
