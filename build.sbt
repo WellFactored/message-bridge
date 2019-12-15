@@ -19,7 +19,8 @@ lazy val root = (project in file("."))
       "com.softwaremill.sttp.tapir" %% "tapir-http4s-server" % tapirVersion,
       "com.softwaremill.sttp.tapir" %% "tapir-json-circe"    % tapirVersion,
       "io.chrisdavenport"           %% "log4cats-core"       % "1.0.1",
-      "ch.qos.logback"              % "logback-classic"      % LogbackVersion
+      "ch.qos.logback"              % "logback-classic"      % LogbackVersion,
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.8"
     ),
     addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.10.3"),
     addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.1")
