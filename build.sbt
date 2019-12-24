@@ -1,6 +1,6 @@
 val CirceVersion     = "0.12.3"
 val LogbackVersion   = "1.2.3"
-val awsClientVersion = "1.11.693"
+val awsClientVersion = "1.11.698"
 
 lazy val root = (project in file("."))
   .settings(

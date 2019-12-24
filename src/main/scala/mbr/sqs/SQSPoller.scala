@@ -44,7 +44,7 @@ class LiveSQSPoller(
       logger.info(s"Received ${messages.length} messages").whenA(messages.nonEmpty) >>
         messages.traverse { message =>
           processor(message).flatMap {
-            case ProcessedSuccessfully =>
+            case ProcessedSuccessfully() =>
               sqsQueue.deleteMessage(message.getReceiptHandle)
 
             case TransientProcessingFailure(msg) =>
