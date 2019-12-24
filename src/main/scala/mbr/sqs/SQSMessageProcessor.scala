@@ -4,6 +4,7 @@ import cats.Applicative
 import cats.implicits._
 import com.amazonaws.services.sqs.model.Message
 import com.rabbitmq.client.AMQP.BasicProperties
+import mbr.rmq.RabbitMQPublisher
 
 import scala.jdk.CollectionConverters._
 
@@ -22,7 +23,7 @@ trait SQSMessageProcessor[F[_]] {
   def apply(message: Message): F[ProcessingResult[String]]
 }
 
-class ProcessToRabbitMQ[F[_]: Applicative](publisher: RabbitMQPublisher[F], exchangeName: String) extends SQSMessageProcessor[F] {
+class ProcessToRabbitMQ[F[_]: Applicative](publisher: RabbitMQPublisher[F]) extends SQSMessageProcessor[F] {
   override def apply(message: Message): F[ProcessingResult[String]] = {
     val mAttrs = message.getMessageAttributes.asScala.toMap
 

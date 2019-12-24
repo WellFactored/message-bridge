@@ -1,4 +1,4 @@
-package mbr.sqs
+package mbr.rmq
 
 import cats.{Applicative, Defer}
 import com.rabbitmq.client.AMQP.BasicProperties

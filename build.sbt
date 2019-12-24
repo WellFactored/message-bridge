@@ -17,6 +17,7 @@ lazy val root = (project in file("."))
       "com.rabbitmq"               % "amqp-client"      % "5.8.0",
       "com.monovore"               %% "decline"         % "1.0.0",
       "io.chrisdavenport"          %% "log4cats-slf4j"  % "1.0.1",
+      "com.typesafe.scala-logging" %% "scala-logging"   % "3.9.2",
       "ch.qos.logback"             % "logback-classic"  % LogbackVersion
     ),
     addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.10.3"),

@@ -6,6 +6,7 @@ import mbr.application.{EffectfulLogging, ThreadPools}
 
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
+import scala.jdk.CollectionConverters._
 
 trait SQSPoller[F[_]] {
   def start: F[Fiber[F, Nothing]]
@@ -43,9 +44,11 @@ class LiveSQSPoller(
     sqsQueue.poll(waitTimeInSeconds, visibilityTimeoutInSeconds).flatMap { messages =>
       logger.info(s"Received ${messages.length} messages").whenA(messages.nonEmpty) >>
         messages.traverse { message =>
+        logger.info(s"${message.getMessageAttributes.asScala}") >>
           processor(message).flatMap {
             case ProcessedSuccessfully() =>
-              sqsQueue.deleteMessage(message.getReceiptHandle)
+              logger.info(s"successfully forwarded message") >>
+                sqsQueue.deleteMessage(message.getReceiptHandle)
 
             case TransientProcessingFailure(msg) =>
               logger.warn(s"Transient failure trying to process message: '$msg'") >>

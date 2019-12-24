@@ -4,6 +4,7 @@ import cats.implicits._
 import cats.{Applicative, Defer, Monad, MonadError}
 import com.amazonaws.services.sqs.AmazonSQS
 import com.amazonaws.services.sqs.model.{Message, ReceiveMessageRequest, SendMessageRequest}
+import com.typesafe.scalalogging.StrictLogging
 import io.circe.Decoder
 import io.circe.generic.semiauto._
 import io.circe.parser._
@@ -46,19 +47,31 @@ class LiveSQSQueue[F[_]: Defer: Monad](sqs: AmazonSQS, val queueUrl: String, dlQ
     LiveSQSQueue.delay[F, A](fa)
 }
 
-object LiveSQSQueue {
+object LiveSQSQueue extends StrictLogging {
+
   def apply[F[_]: Defer](sqs: AmazonSQS, queueUrl: String)(implicit me: MonadError[F, Throwable]): F[LiveSQSQueue[F]] =
     getQueueAttributes[F](sqs, queueUrl).flatMap { attrs =>
       attrs
         .get("RedrivePolicy")
         .map(s => parse(s).flatMap(_.as[RedrivePolicy]))
         .getOrElse(Left(new Exception(s"Queue $queueUrl does not have a deadletter queue configured"))) match {
-        case Left(e)   => me.raiseError(e)
-        case Right(rd) => new LiveSQSQueue[F](sqs, queueUrl, rd.deadLetterTargetArn).pure[F]
+
+        case Left(e) =>
+          me.raiseError(e)
+
+        case Right(rd) =>
+          val dlqName = rd.deadLetterTargetArn.split(':').last
+          logger
+            .info(s"Using deadletter queue $dlqName")
+            .pure[F]
+            .as(new LiveSQSQueue[F](sqs, queueUrl, dlqName))
       }
     }
 
-  private def getQueueAttributes[F[_]: Defer: Monad](sqs: AmazonSQS, queueUrl: String): F[Map[String, String]] =
+  private def getQueueUrl[F[_]: Defer: Applicative](sqs: AmazonSQS, name: String): F[String] =
+    delay[F, String](sqs.getQueueUrl(name).getQueueUrl)
+
+  private def getQueueAttributes[F[_]: Defer: Applicative](sqs: AmazonSQS, queueUrl: String): F[Map[String, String]] =
     delay[F, Map[String, String]](sqs.getQueueAttributes(queueUrl, List("RedrivePolicy").asJava).getAttributes.asScala.toMap)
 
   def delay[F[_]: Defer: Applicative, A](f: => A): F[A] =
