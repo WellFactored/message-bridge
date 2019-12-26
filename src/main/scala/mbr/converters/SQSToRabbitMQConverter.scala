@@ -2,21 +2,22 @@ package mbr.converters
 
 import com.amazonaws.services.sqs.model.{Message, MessageAttributeValue}
 import com.rabbitmq.client.AMQP.BasicProperties
+import mbr.rmq.RabbitMQMessageData
 
 import scala.jdk.CollectionConverters._
 
-class SQSToRabbitMQConverter(message: Message) {
-  val mAttrs: Map[String, MessageAttributeValue] = message.getMessageAttributes.asScala.toMap
+class SQSToRabbitMQConverter(message: Message) extends RabbitMQMessageData {
+  private val mAttrs: Map[String, MessageAttributeValue] = message.getMessageAttributes.asScala.toMap
 
-  val alreadyBridged: Boolean =
+  override val alreadyBridged: Boolean =
     mAttrs.get("AlreadyBridged").isDefined
 
-  val routingKey: Option[String] =
+  override val routingKey: Option[String] =
     mAttrs
       .get("RoutingKey")
       .map(_.getStringValue)
 
-  val properties: BasicProperties =
+  override val properties: BasicProperties =
     (new BasicProperties)
       .builder()
       .headers(Map[String, AnyRef]("X-ALREADY-BRIDGED" -> "true").asJava)
@@ -30,5 +31,5 @@ class SQSToRabbitMQConverter(message: Message) {
       .userId(mAttrs.get("UserId").map(_.getStringValue).orNull)
       .build()
 
-  val body: String = message.getBody
+  override val body: String = message.getBody
 }

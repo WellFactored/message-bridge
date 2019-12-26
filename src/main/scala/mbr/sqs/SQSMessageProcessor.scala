@@ -23,12 +23,12 @@ trait SQSMessageProcessor[F[_]] {
 
 class ProcessToRabbitMQ[F[_]: Applicative](publisher: RabbitMQPublisher[F]) extends SQSMessageProcessor[F] {
   override def apply(message: Message): F[ProcessingResult[String]] = {
-    val converter = new SQSToRabbitMQConverter(message)
-    val success   = ProcessingResult.processedSuccessfully[String]
+    val messageData = new SQSToRabbitMQConverter(message)
+    val success     = ProcessingResult.processedSuccessfully[String]
 
-    if (converter.alreadyBridged) success.pure[F]
+    if (messageData.alreadyBridged) success.pure[F]
     else {
-      (converter.routingKey, converter.properties, converter.body) match {
+      (messageData.routingKey, messageData.properties, messageData.body) match {
         case (None, _, _)                 => ProcessingResult.permanentProcessingFailure("No routing key on SQS message").pure[F]
         case (Some(rk), properties, body) => publisher.publish(rk, properties, body).as(success)
       }
