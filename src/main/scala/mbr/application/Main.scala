@@ -30,7 +30,6 @@ object Main extends IOApp {
       poller = new LiveSQSPoller(sqsQueue, processor)
       fiber <- Resource.liftF(poller.start)
     } yield fiber
-
   }.use { fiber =>
     fiber.join.as(ExitCode.Error)
   }

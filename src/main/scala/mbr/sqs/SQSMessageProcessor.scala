@@ -3,10 +3,8 @@ package mbr.sqs
 import cats.Applicative
 import cats.implicits._
 import com.amazonaws.services.sqs.model.Message
-import com.rabbitmq.client.AMQP.BasicProperties
+import mbr.converters.SQSToRabbitMQConverter
 import mbr.rmq.RabbitMQPublisher
-
-import scala.jdk.CollectionConverters._
 
 sealed trait ProcessingResult[+A]
 case class ProcessedSuccessfully[+A]() extends ProcessingResult[A]
@@ -25,32 +23,15 @@ trait SQSMessageProcessor[F[_]] {
 
 class ProcessToRabbitMQ[F[_]: Applicative](publisher: RabbitMQPublisher[F]) extends SQSMessageProcessor[F] {
   override def apply(message: Message): F[ProcessingResult[String]] = {
-    val mAttrs = message.getMessageAttributes.asScala.toMap
+    val converter = new SQSToRabbitMQConverter(message)
+    val success   = ProcessingResult.processedSuccessfully[String]
 
-    mAttrs
-      .get("AlreadyBridged")
-      .map(_ => ProcessingResult.processedSuccessfully[String].pure[F])
-      .getOrElse {
-        mAttrs
-          .get("RoutingKey")
-          .map(_.getStringValue)
-          .map { rk =>
-            val properties =
-              (new BasicProperties)
-                .builder()
-                .headers(Map[String, AnyRef]("X-ALREADY-BRIDGED" -> "true").asJava)
-                .appId(mAttrs.get("AppId").map(_.getStringValue).orNull)
-                .contentType(mAttrs.get("ContentType").map(_.getStringValue).orNull)
-                .contentEncoding(mAttrs.get("ContentEncoding").map(_.getStringValue).orNull)
-                .correlationId(mAttrs.get("CorrelationId").map(_.getStringValue).orNull)
-                .expiration(mAttrs.get("Expiration").map(_.getStringValue).orNull)
-                .replyTo(mAttrs.get("ReplyTo").map(_.getStringValue).orNull)
-                .`type`(mAttrs.get("Type").map(_.getStringValue).orNull)
-                .userId(mAttrs.get("UserId").map(_.getStringValue).orNull)
-                .build()
-            publisher.publish(rk, properties, message.getBody).as(ProcessingResult.processedSuccessfully[String])
-          }
-          .getOrElse(ProcessingResult.permanentProcessingFailure("No routing key on SQS message").pure[F])
+    if (converter.alreadyBridged) success.pure[F]
+    else {
+      (converter.routingKey, converter.properties, converter.body) match {
+        case (None, _, _)                 => ProcessingResult.permanentProcessingFailure("No routing key on SQS message").pure[F]
+        case (Some(rk), properties, body) => publisher.publish(rk, properties, body).as(success)
       }
+    }
   }
 }
