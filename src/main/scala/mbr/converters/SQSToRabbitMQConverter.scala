@@ -22,6 +22,7 @@ class SQSToRabbitMQConverter(message: Message) extends RabbitMQMessageData {
       .builder()
       .headers(Map[String, AnyRef]("X-ALREADY-BRIDGED" -> "true").asJava)
       .appId(mAttrs.get("AppId").map(_.getStringValue).orNull)
+      .clusterId(mAttrs.get("ClusterId").map(_.getStringValue).orNull)
       .contentType(mAttrs.get("ContentType").map(_.getStringValue).orNull)
       .contentEncoding(mAttrs.get("ContentEncoding").map(_.getStringValue).orNull)
       .correlationId(mAttrs.get("CorrelationId").map(_.getStringValue).orNull)
