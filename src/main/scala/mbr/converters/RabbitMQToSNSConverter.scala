@@ -1,14 +1,9 @@
 package mbr.converters
 
-import com.amazonaws.services.sqs.model.MessageAttributeValue
+import com.amazonaws.services.sns.model.MessageAttributeValue
 import dev.profunktor.fs2rabbit.model
 import dev.profunktor.fs2rabbit.model.AmqpEnvelope
-
-trait SNSMessageData {
-  def alreadyBridged: Boolean
-  def attributes:     Map[String, MessageAttributeValue]
-  def body:           String
-}
+import mbr.sns.SNSMessageData
 
 class RabbitMQToSNSConverter(envelope: AmqpEnvelope[String]) extends SNSMessageData {
 

@@ -1,15 +1,15 @@
 package mbr.sns
 
 import cats.{Applicative, Defer, Monad}
-import com.amazonaws.services.sns._
-import com.amazonaws.services.sns.model._
+import com.amazonaws.services.sns.AmazonSNS
+import com.amazonaws.services.sns.model.PublishRequest
 
 import scala.jdk.CollectionConverters._
 
-class SNSPublisher[F[_]: Defer: Monad](sns: AmazonSNSClient, topicName: String) {
+class SNSPublisher[F[_]: Defer: Monad](sns: AmazonSNS, topicName: String) {
 
-  def publish(attributes: Map[String, MessageAttributeValue], body: String): F[Unit] = {
-    val req = new PublishRequest(topicName, body).withMessageAttributes(attributes.asJava)
+  def publish(messageData: SNSMessageData): F[Unit] = {
+    val req = new PublishRequest(topicName, messageData.body).withMessageAttributes(messageData.attributes.asJava)
     delay(sns.publish(req))
   }
 
