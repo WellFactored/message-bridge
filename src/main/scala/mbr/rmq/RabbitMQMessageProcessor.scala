@@ -10,7 +10,10 @@ class RabbitMQMessageProcessor[F[_]: Monad](acker: RabbitMQConsumer.AckerFunctio
   def process(envelope: AmqpEnvelope[String]): F[Unit] = {
     val messageData = new RabbitMQToSNSConverter(envelope)
 
-    publisher.publish(messageData) >>
+    if (messageData.alreadyBridged)
       acker(AckResult.Ack(envelope.deliveryTag))
+    else
+      publisher.publish(messageData) >>
+        acker(AckResult.Ack(envelope.deliveryTag))
   }
 }
