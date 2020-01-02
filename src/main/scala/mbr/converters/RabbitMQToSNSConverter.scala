@@ -23,10 +23,11 @@ class RabbitMQToSNSConverter(envelope: AmqpEnvelope[String]) extends SNSMessageD
       properties.replyTo.map(stringAttribute("ReplyTo", _)) +
       stringAttribute("RoutingKey", envelope.routingKey.value) ++
       properties.`type`.map(stringAttribute("Type", _)) ++
-      properties.userId.map(stringAttribute("UserId", _))
+      properties.userId.map(stringAttribute("UserId", _)) +
+      stringAttribute("X-ALREADY-BRIDGED", "true")
 
   private def stringAttribute(name: String, value: String): (String, MessageAttributeValue) =
-    (name, new MessageAttributeValue().withStringValue(value))
+    (name, new MessageAttributeValue().withStringValue(value).withDataType("String"))
 
   override val body: String =
     envelope.payload

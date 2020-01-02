@@ -1,8 +1,9 @@
 package mbr.sqs
 
-import cats.Applicative
+import cats.effect.Sync
 import cats.implicits._
 import com.amazonaws.services.sqs.model.Message
+import mbr.application.EffectfulLogging
 import mbr.converters.SQSToRabbitMQConverter
 import mbr.rmq.RabbitMQPublisher
 
@@ -21,12 +22,12 @@ trait SQSMessageProcessor[F[_]] {
   def apply(message: Message): F[ProcessingResult[String]]
 }
 
-class ProcessToRabbitMQ[F[_]: Applicative](publisher: RabbitMQPublisher[F]) extends SQSMessageProcessor[F] {
+class ProcessToRabbitMQ[F[_]: Sync](publisher: RabbitMQPublisher[F]) extends SQSMessageProcessor[F] with EffectfulLogging[F] {
   override def apply(message: Message): F[ProcessingResult[String]] = {
     val messageData = new SQSToRabbitMQConverter(message)
     val success     = ProcessingResult.processedSuccessfully[String]
 
-    if (messageData.alreadyBridged) success.pure[F]
+    if (messageData.alreadyBridged) logger.debug("dropping message that has already been bridged").as(success)
     else {
       (messageData.routingKey, messageData.properties, messageData.body) match {
         case (None, _, _)                 => ProcessingResult.permanentProcessingFailure("No routing key on SQS message").pure[F]

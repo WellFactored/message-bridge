@@ -9,6 +9,7 @@ import com.rabbitmq.client.{Channel, Connection, ConnectionFactory}
 import dev.profunktor.fs2rabbit.config.Fs2RabbitConfig
 import dev.profunktor.fs2rabbit.interpreter.RabbitClient
 import dev.profunktor.fs2rabbit.model.{ExchangeName, QueueName}
+import fs2.Stream
 import mbr.rmq.{ExchangePublisher, RabbitMQConsumer, RabbitMQMessageProcessor}
 import mbr.sns.SNSPublisher
 import mbr.sqs.{LiveSQSPoller, LiveSQSQueue, ProcessToRabbitMQ}
@@ -21,7 +22,7 @@ final case class RabbitMQConfig(
   password: String = "guest"
 )
 
-object Main extends IOApp {
+object Main extends IOApp with IOLogging {
   override def run(args: List[String]): IO[ExitCode] = {
     val fs2RabbitConfig: Fs2RabbitConfig =
       Fs2RabbitConfig(
@@ -32,7 +33,7 @@ object Main extends IOApp {
         ssl = false,
         Some("guest"),
         Some("guest"),
-        requeueOnNack = true,
+        requeueOnNack = false, // message will deadletter if the exchange is set up to do that
         Some(10)
       )
 
@@ -45,18 +46,23 @@ object Main extends IOApp {
       credentials = new ProfileCredentialsProvider("wellfactored")
       sns <- Resource.make[IO, AmazonSNS](IO(AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build()))(sns =>
               IO(sns.shutdown()))
-      snsPublisher = new SNSPublisher[IO](sns, "events")
-      _ <- Resource.liftF(messageStream.evalMap(new RabbitMQMessageProcessor[IO](acker, snsPublisher).process).compile.drain)
+      snsPublisher = new SNSPublisher[IO](sns, "arn:aws:sns:eu-west-1:079345157050:events")
+      messageProcessingStream <- Resource.pure[IO, Stream[IO, Unit]](
+                                  messageStream.evalMap(new RabbitMQMessageProcessor[IO](acker, snsPublisher).process))
 
+      _ <- Resource.liftF(logger.debug("building sqs poller"))
       sqs <- Resource.make[IO, AmazonSQS](IO(AmazonSQSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build()))(sqs =>
               IO(sqs.shutdown()))
       sqsQueue <- Resource.liftF(LiveSQSQueue[IO](sqs, "message-bridge-events"))
       processor = new ProcessToRabbitMQ[IO](new ExchangePublisher[IO](channel, "events"))
       poller    = new LiveSQSPoller(sqsQueue, processor)
-      fiber <- Resource.liftF(poller.start)
-    } yield fiber
-  }.use { fiber =>
-    fiber.join.as(ExitCode.Error)
+
+      pollerFiber <- Resource.liftF(poller.start)
+      rabbitFiber <- Resource.liftF(messageProcessingStream.compile.drain.start)
+    } yield (pollerFiber, rabbitFiber)
+  }.use {
+    case (pollerFiber, rabbitFiber) =>
+      (pollerFiber.join >> rabbitFiber.join).as(ExitCode.Error)
   }
 
   def createConnection(config: RabbitMQConfig): Resource[IO, Connection] =

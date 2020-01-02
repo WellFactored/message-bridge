@@ -2,7 +2,7 @@ package mbr.sqs
 
 import cats.effect.{ContextShift, Fiber, IO, Timer}
 import cats.implicits._
-import mbr.application.{EffectfulLogging, ThreadPools}
+import mbr.application.{IOLogging, ThreadPools}
 
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
@@ -12,11 +12,17 @@ trait SQSPoller[F[_]] {
   def start: F[Fiber[F, Nothing]]
 }
 
+trait SQSResponder[F[_]] {
+  def success(): F[Unit]
+  def transientFailure(msg:String):F[Unit]
+  def permanentFailure(msg:String):F[Unit]
+}
+
 class LiveSQSPoller(
   sqsQueue:  SQSQueue[IO],
   processor: SQSMessageProcessor[IO]
 ) extends SQSPoller[IO]
-    with EffectfulLogging {
+    with IOLogging {
 
   def start: IO[Fiber[IO, Nothing]] =
     ThreadPools.fixedThreadPool(1).use { implicit ec =>
@@ -33,7 +39,7 @@ class LiveSQSPoller(
     * `IO.flatMap` is stack safe, so no worries about the recursion
     */
   private def loop(implicit timer: Timer[IO]): IO[Nothing] =
-    poll(20, 30).recoverWith {
+    poll(20, 2).recoverWith {
       case NonFatal(t) =>
         logger.error(t)("Caught an exception in the sqs poll loop - recovering") >>
           logger.error(t.getMessage) >>
@@ -47,7 +53,7 @@ class LiveSQSPoller(
           logger.info(s"${message.getMessageAttributes.asScala}") >>
             processor(message).flatMap {
               case ProcessedSuccessfully() =>
-                logger.info(s"successfully forwarded message") >>
+                logger.info(s"successfully processed message") >>
                   sqsQueue.deleteMessage(message.getReceiptHandle)
 
               case TransientProcessingFailure(msg) =>

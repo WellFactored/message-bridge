@@ -25,7 +25,8 @@ object RabbitMQConsumer {
   ): Resource[F, (AckerFunction[F], MessageStream[F, A])] =
     R.createConnectionChannel.flatMap { implicit channel =>
       Resource.liftF {
-        R.declareQueue(DeclarationQueueConfig(queueName, Durable, NonExclusive, NonAutoDelete, Map.empty)) >>
+        R.declareExchange(exchangeName, ExchangeType.Topic) >>
+          R.declareQueue(DeclarationQueueConfig(queueName, Durable, NonExclusive, NonAutoDelete, Map.empty)) >>
           R.bindQueue(queueName, exchangeName, RoutingKey("#")) >>
           R.createAckerConsumer[A](queueName)
       }

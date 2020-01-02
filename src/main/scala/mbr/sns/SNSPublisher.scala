@@ -6,10 +6,11 @@ import com.amazonaws.services.sns.model.PublishRequest
 
 import scala.jdk.CollectionConverters._
 
-class SNSPublisher[F[_]: Defer: Monad](sns: AmazonSNS, topicName: String) {
+class SNSPublisher[F[_]: Defer: Monad](sns: AmazonSNS, topicARN: String) {
 
   def publish(messageData: SNSMessageData): F[Unit] = {
-    val req = new PublishRequest(topicName, messageData.body).withMessageAttributes(messageData.attributes.asJava)
+    val attributes = messageData.attributes
+    val req        = new PublishRequest(topicARN, messageData.body).withMessageAttributes(attributes.asJava)
     delay(sns.publish(req))
   }
 

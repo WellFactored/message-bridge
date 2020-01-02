@@ -68,9 +68,6 @@ object LiveSQSQueue extends StrictLogging {
       }
     }
 
-  private def getQueueUrl[F[_]: Defer: Applicative](sqs: AmazonSQS, name: String): F[String] =
-    delay[F, String](sqs.getQueueUrl(name).getQueueUrl)
-
   private def getQueueAttributes[F[_]: Defer: Applicative](sqs: AmazonSQS, queueUrl: String): F[Map[String, String]] =
     delay[F, Map[String, String]](sqs.getQueueAttributes(queueUrl, List("RedrivePolicy").asJava).getAttributes.asScala.toMap)
 
