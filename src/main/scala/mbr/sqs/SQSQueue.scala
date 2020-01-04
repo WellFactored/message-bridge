@@ -1,18 +1,22 @@
 package mbr.sqs
 
+import cats.effect.Sync
 import cats.implicits._
-import cats.{Applicative, Defer, Monad, MonadError}
+import cats.{Applicative, Defer, FlatMap, MonadError}
 import com.amazonaws.services.sqs.AmazonSQS
 import com.amazonaws.services.sqs.model.{Message, ReceiveMessageRequest, SendMessageRequest}
 import com.typesafe.scalalogging.StrictLogging
+import fs2.Stream
 import io.circe.Decoder
 import io.circe.generic.semiauto._
 import io.circe.parser._
+import mbr.application.EffectfulLogging
 
 import scala.jdk.CollectionConverters._
 
 trait SQSQueue[F[_]] {
   def queueUrl: String
+  def stream(waitTimeInSeconds:    Int, visibilityTimeoutInSeconds: Int): Stream[F, Message]
   def poll(waitTimeInSeconds:      Int, visibilityTimeoutInSeconds: Int): F[List[Message]]
   def deleteMessage(receiptHandle: String): F[Unit]
   def deadletter(message:          Message): F[Unit]
@@ -23,7 +27,13 @@ object RedrivePolicy {
   implicit val decoder: Decoder[RedrivePolicy] = deriveDecoder[RedrivePolicy]
 }
 
-class LiveSQSQueue[F[_]: Defer: Monad](sqs: AmazonSQS, val queueUrl: String, dlQueueUrl: String) extends SQSQueue[F] {
+class LiveSQSQueue[F[_]: Defer: Sync](sqs: AmazonSQS, val queueUrl: String, dlQueueUrl: String) extends SQSQueue[F] with EffectfulLogging[F] {
+
+  override def stream(waitTimeInSeconds: Int, visibilityTimeoutInSeconds: Int): Stream[F, Message] =
+    Stream
+      .repeatEval(poll(waitTimeInSeconds, visibilityTimeoutInSeconds))
+      .evalMap(msgs => FlatMap[F].ifM(msgs.nonEmpty.pure[F])(logger.debug(s"retrieved ${msgs.length} messages"), ().pure[F]).as(msgs))
+      .flatMap(Stream.emits)
 
   def poll(waitTimeInSeconds: Int, visibilityTimeoutInSeconds: Int): F[List[Message]] = {
     val request = new ReceiveMessageRequest(queueUrl)
@@ -31,7 +41,9 @@ class LiveSQSQueue[F[_]: Defer: Monad](sqs: AmazonSQS, val queueUrl: String, dlQ
     request.setVisibilityTimeout(visibilityTimeoutInSeconds)
     request.setAttributeNames(List("All").asJavaCollection)
     request.setMessageAttributeNames(List("All").asJavaCollection)
-    delay(sqs.receiveMessage(request)).map(_.getMessages.asScala.toList)
+
+    logger.debug("polling for sqs messages") >>
+      delay(sqs.receiveMessage(request)).map(_.getMessages.asScala.toList)
   }
 
   override def deleteMessage(receiptHandle: String): F[Unit] =
@@ -49,7 +61,7 @@ class LiveSQSQueue[F[_]: Defer: Monad](sqs: AmazonSQS, val queueUrl: String, dlQ
 
 object LiveSQSQueue extends StrictLogging {
 
-  def apply[F[_]: Defer](sqs: AmazonSQS, queueUrl: String)(implicit me: MonadError[F, Throwable]): F[LiveSQSQueue[F]] =
+  def apply[F[_]: Sync](sqs: AmazonSQS, queueUrl: String)(implicit me: MonadError[F, Throwable]): F[LiveSQSQueue[F]] =
     getQueueAttributes[F](sqs, queueUrl).flatMap { attrs =>
       attrs
         .get("RedrivePolicy")
