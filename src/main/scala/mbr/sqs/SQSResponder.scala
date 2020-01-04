@@ -15,7 +15,7 @@ class LiveSQSResponder[F[_]: Sync](sqsQueue: SQSQueue[F]) extends SQSResponder[F
 
     case TransientProcessingFailure(_, error) =>
       logger.warn(s"Transient failure trying to process message: '$error'") >>
-        ().pure[F]
+        ().pure[F] // let the visibility timeout take care of making the message available again
 
     case PermanentProcessingFailure(message, error) =>
       logger.error(s"Permanent failure trying to process message: '$error' - sending to deadletter queue") >>

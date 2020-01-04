@@ -31,6 +31,9 @@ object Main extends IOApp with IOLogging {
 
     val credentials = new ProfileCredentialsProvider("wellfactored")
 
-    Bridge.build(fs2RabbitConfig, credentials, ExchangeName("events"), "events")
-  }.use(_.compile.drain.as(ExitCode.Error))
+    Bridge
+      .build(fs2RabbitConfig, credentials, ExchangeName("events"), "events")
+      .use(_.compile.drain)
+      .as(ExitCode.Success)
+  }
 }
