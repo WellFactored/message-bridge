@@ -3,9 +3,11 @@ package mbr.application
 import cats.effect.{ExitCode, IO, IOApp, Resource}
 import cats.implicits._
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
+import com.amazonaws.services.sns.AmazonSNSClientBuilder
 import dev.profunktor.fs2rabbit.config.Fs2RabbitConfig
 import dev.profunktor.fs2rabbit.model.ExchangeName
 import fs2.Stream
+import mbr.sns.SNSTopic
 
 final case class RabbitMQConfig(
   host:     String = "localhost",
@@ -45,18 +47,21 @@ object Main extends IOApp with IOLogging {
 
     val credentials = new ProfileCredentialsProvider("wellfactored")
 
+    val topics = SNSTopic.list[IO](AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build)
+
     val configs = List(
       BridgeConfig(ExchangeName("events"), "events", fs2RabbitConfig, credentials),
       BridgeConfig(ExchangeName("commands"), "commands", fs2RabbitConfig, credentials)
     )
 
     val bridges: Resource[IO, List[fs2.Stream[IO, Unit]]] = configs.map(Bridge.build).sequence
-    bridges
-      .map {
-        case Nil          => Stream.empty
-        case head :: tail => tail.fold(head)(_.concurrently(_))
-      }
-      .use(_.compile.drain)
-      .as(ExitCode.Error)
+    topics.evalMap(topic => logger.info(topic.arn)).compile.drain >>
+      bridges
+        .map {
+          case Nil          => Stream.empty
+          case head :: tail => tail.fold(head)(_.concurrently(_))
+        }
+        .use(_.compile.drain)
+        .as(ExitCode.Error)
   }
 }
