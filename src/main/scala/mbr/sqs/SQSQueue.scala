@@ -27,15 +27,14 @@ object RedrivePolicy {
   implicit val decoder: Decoder[RedrivePolicy] = deriveDecoder[RedrivePolicy]
 }
 
-class LiveSQSQueue[F[_]: Defer: Sync](sqs: AmazonSQS, val queueUrl: String, dlQueueUrl: String) extends SQSQueue[F] with EffectfulLogging[F] {
-
+class LiveSQSQueue[F[_]](sqs: AmazonSQS, val queueUrl: String, dlQueueUrl: String)(implicit F: Sync[F]) extends SQSQueue[F] with EffectfulLogging[F] {
   override def stream(waitTimeInSeconds: Int, visibilityTimeoutInSeconds: Int): Stream[F, Message] =
     Stream
       .repeatEval(poll(waitTimeInSeconds, visibilityTimeoutInSeconds))
       .evalMap(msgs => FlatMap[F].ifM(msgs.nonEmpty.pure[F])(logger.debug(s"retrieved ${msgs.length} messages"), ().pure[F]).as(msgs))
       .flatMap(Stream.emits)
 
-  def poll(waitTimeInSeconds: Int, visibilityTimeoutInSeconds: Int): F[List[Message]] = {
+  override def poll(waitTimeInSeconds: Int, visibilityTimeoutInSeconds: Int): F[List[Message]] = {
     val request = new ReceiveMessageRequest(queueUrl)
     request.setWaitTimeSeconds(waitTimeInSeconds)
     request.setVisibilityTimeout(visibilityTimeoutInSeconds)
@@ -43,20 +42,17 @@ class LiveSQSQueue[F[_]: Defer: Sync](sqs: AmazonSQS, val queueUrl: String, dlQu
     request.setMessageAttributeNames(List("All").asJavaCollection)
 
     logger.debug("polling for sqs messages") >>
-      delay(sqs.receiveMessage(request)).map(_.getMessages.asScala.toList)
+      F.delay(sqs.receiveMessage(request)).map(_.getMessages.asScala.toList)
   }
 
   override def deleteMessage(receiptHandle: String): F[Unit] =
-    delay(sqs.deleteMessage(queueUrl, receiptHandle))
+    F.delay(sqs.deleteMessage(queueUrl, receiptHandle))
 
   override def deadletter(message: Message): F[Unit] = {
     val sendRequest = new SendMessageRequest(dlQueueUrl, message.getBody)
     sendRequest.setMessageAttributes(message.getMessageAttributes)
-    delay(sqs.sendMessage(sendRequest)) >> delay(sqs.deleteMessage(queueUrl, message.getReceiptHandle))
+    F.delay(sqs.sendMessage(sendRequest)) >> F.delay(sqs.deleteMessage(queueUrl, message.getReceiptHandle))
   }
-
-  private def delay[A](fa: => A): F[A] =
-    LiveSQSQueue.delay[F, A](fa)
 }
 
 object LiveSQSQueue extends StrictLogging {
