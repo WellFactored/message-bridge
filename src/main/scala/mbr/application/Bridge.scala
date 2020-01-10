@@ -15,12 +15,13 @@ import mbr.sns.SNSPublisher
 import mbr.sqs.{LiveSQSQueue, LiveSQSResponder, ProcessToRabbitMQ}
 
 object Bridge {
-  def build(fs2RabbitConfig: Fs2RabbitConfig, credentials: AWSCredentialsProvider, exchange: ExchangeName, topic: String)(
-    implicit cs:             ContextShift[IO]): Resource[IO, Stream[IO, Unit]] =
+  def build(config: BridgeConfig)(implicit cs: ContextShift[IO]): Resource[IO, Stream[IO, Unit]] = {
+    import config._
     for {
-      rabbitMQPipeline <- initializeRabbitConsumer(fs2RabbitConfig, credentials, exchange, topic)
-      sqsPipeline      <- initializeSQSConsumer(credentials, exchange, topic)
+      rabbitMQPipeline <- initializeRabbitConsumer(fs2RabbitConfig, awsCredentialsProvider, rmqExchangeName, snsTopicName)
+      sqsPipeline      <- initializeSQSConsumer(RabbitMQConfig.from(fs2RabbitConfig), awsCredentialsProvider, rmqExchangeName, snsTopicName)
     } yield rabbitMQPipeline.concurrently(sqsPipeline)
+  }
 
   def initializeRabbitConsumer(fs2RabbitConfig: Fs2RabbitConfig, credentials: AWSCredentialsProvider, exchange: ExchangeName, topic: String)(
     implicit cs:                                ContextShift[IO]): Resource[IO, Stream[IO, Unit]] =
@@ -35,9 +36,13 @@ object Bridge {
                                   messageStream.evalMap(new RabbitMQMessageProcessor[IO](acker, snsPublisher).process))
     } yield messageProcessingStream
 
-  def initializeSQSConsumer(credentials: AWSCredentialsProvider, exchange: ExchangeName, topic: String): Resource[IO, Stream[IO, Unit]] =
+  def initializeSQSConsumer(
+    rabbitMQConfig: RabbitMQConfig,
+    credentials:    AWSCredentialsProvider,
+    exchange:       ExchangeName,
+    topic:          String): Resource[IO, Stream[IO, Unit]] =
     for {
-      connection <- createConnection(RabbitMQConfig())
+      connection <- createConnection(rabbitMQConfig)
       channel    <- createChannel(connection)
       sqs <- Resource.make[IO, AmazonSQS](IO(AmazonSQSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build()))(sqs =>
               IO(sqs.shutdown()))
