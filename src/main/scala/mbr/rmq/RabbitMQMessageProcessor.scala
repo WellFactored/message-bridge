@@ -10,8 +10,7 @@ import mbr.sns.SNSPublisher
 
 import scala.util.control.NonFatal
 
-class RabbitMQMessageProcessor[F[_]: Sync](acker: RabbitMQConsumer.AckerFunction[F], publisher: SNSPublisher[F])(
-  implicit me: MonadError[F, Throwable])
+class RabbitMQMessageProcessor[F[_]: Sync: MonadError[*[_], Throwable]](acker: RabbitMQConsumer.AckerFunction[F], publisher: SNSPublisher[F])
     extends EffectfulLogging[F] {
 
   def process(envelope: AmqpEnvelope[String]): F[Unit] = {

@@ -57,7 +57,7 @@ class LiveSQSQueue[F[_]](sqs: AmazonSQS, val queueUrl: String, dlQueueUrl: Strin
 
 object LiveSQSQueue extends StrictLogging {
 
-  def apply[F[_]: Sync](sqs: AmazonSQS, queueUrl: String)(implicit me: MonadError[F, Throwable]): F[LiveSQSQueue[F]] =
+  def apply[F[_]: Sync: MonadError[*[_], Throwable]](sqs: AmazonSQS, queueUrl: String): F[LiveSQSQueue[F]] =
     getQueueAttributes[F](sqs, queueUrl).flatMap { attrs =>
       attrs
         .get("RedrivePolicy")
@@ -65,7 +65,7 @@ object LiveSQSQueue extends StrictLogging {
         .getOrElse(Left(new Exception(s"Queue $queueUrl does not have a deadletter queue configured"))) match {
 
         case Left(e) =>
-          me.raiseError(e)
+          MonadError[F, Throwable].raiseError(e)
 
         case Right(rd) =>
           val dlqName = rd.deadLetterTargetArn.split(':').last
