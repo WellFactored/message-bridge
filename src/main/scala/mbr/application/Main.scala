@@ -54,7 +54,7 @@ object Main extends IOApp with IOLogging {
       BridgeConfig(ExchangeName("commands"), "commands", fs2RabbitConfig, credentials)
     )
 
-    val bridges: Resource[IO, List[fs2.Stream[IO, Unit]]] = configs.map(Bridge.build).sequence
+    val bridges: Resource[IO, List[fs2.Stream[IO, Unit]]] = configs.map(Bridge.build[IO]).sequence
     topics.evalMap(topic => logger.info(topic.arn)).compile.drain >>
       bridges
         .map {

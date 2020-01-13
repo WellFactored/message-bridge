@@ -1,6 +1,7 @@
 package mbr.application
 
-import cats.effect.{Blocker, ContextShift, IO, Resource}
+import cats.Applicative
+import cats.effect.{Blocker, ConcurrentEffect, ContextShift, Resource, Sync}
 import cats.implicits._
 import com.amazonaws.auth.AWSCredentialsProvider
 import com.amazonaws.services.sns.{AmazonSNS, AmazonSNSClientBuilder}
@@ -15,7 +16,7 @@ import mbr.sns.SNSPublisher
 import mbr.sqs.{LiveSQSQueue, LiveSQSResponder, ProcessToRabbitMQ}
 
 object Bridge {
-  def build(config: BridgeConfig)(implicit cs: ContextShift[IO]): Resource[IO, Stream[IO, Unit]] = {
+  def build[F[_]: ContextShift: ConcurrentEffect](config: BridgeConfig): Resource[F, Stream[F, Unit]] = {
     import config._
     for {
       rabbitMQPipeline <- initializeRabbitConsumer(fs2RabbitConfig, awsCredentialsProvider, rmqExchangeName, snsTopicName)
@@ -23,35 +24,38 @@ object Bridge {
     } yield rabbitMQPipeline.concurrently(sqsPipeline)
   }
 
-  def initializeRabbitConsumer(fs2RabbitConfig: Fs2RabbitConfig, credentials: AWSCredentialsProvider, exchange: ExchangeName, topic: String)(
-    implicit cs:                                ContextShift[IO]): Resource[IO, Stream[IO, Unit]] =
+  def initializeRabbitConsumer[F[_]: ContextShift: ConcurrentEffect](
+    fs2RabbitConfig: Fs2RabbitConfig,
+    credentials:     AWSCredentialsProvider,
+    exchange:        ExchangeName,
+    topic:           String): Resource[F, Stream[F, Unit]] =
     for {
-      blocker                <- Blocker[IO]
-      client                 <- Resource.liftF(RabbitClient[IO](fs2RabbitConfig, blocker))
-      (acker, messageStream) <- RabbitMQConsumer.build[IO, String](exchange, QueueName(s"${exchange.value}-message-bridge"), client)
-      sns <- Resource.make[IO, AmazonSNS](IO(AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build()))(sns =>
-              IO(sns.shutdown()))
-      snsPublisher = new SNSPublisher[IO](sns, s"arn:aws:sns:eu-west-1:079345157050:$topic")
-      messageProcessingStream <- Resource.pure[IO, Stream[IO, Unit]](
-                                  messageStream.evalMap(new RabbitMQMessageProcessor[IO](acker, snsPublisher).process))
+      blocker                <- Blocker[F]
+      client                 <- Resource.liftF(RabbitClient[F](fs2RabbitConfig, blocker))
+      (acker, messageStream) <- RabbitMQConsumer.build[F, String](exchange, QueueName(s"${exchange.value}-message-bridge"), client)
+      sns <- Resource.make[F, AmazonSNS](AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build().pure[F])(
+              sns => sns.shutdown().pure[F])
+      snsPublisher = new SNSPublisher[F](sns, s"arn:aws:sns:eu-west-1:079345157050:$topic")
+      messageProcessingStream <- Resource.pure[F, Stream[F, Unit]](
+                                  messageStream.evalMap(new RabbitMQMessageProcessor[F](acker, snsPublisher).process))
     } yield messageProcessingStream
 
-  def initializeSQSConsumer(
+  def initializeSQSConsumer[F[_]: Sync](
     rabbitMQConfig: RabbitMQConfig,
     credentials:    AWSCredentialsProvider,
     exchange:       ExchangeName,
-    topic:          String): Resource[IO, Stream[IO, Unit]] =
+    topic:          String): Resource[F, Stream[F, Unit]] =
     for {
-      connection <- createConnection(rabbitMQConfig)
-      channel    <- createChannel(connection)
-      sqs <- Resource.make[IO, AmazonSQS](IO(AmazonSQSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build()))(sqs =>
-              IO(sqs.shutdown()))
-      sqsQueue <- Resource.liftF(LiveSQSQueue[IO](sqs, s"message-bridge-$topic"))
-      responder = new LiveSQSResponder[IO](sqsQueue)
-      processor = new ProcessToRabbitMQ[IO](new ExchangePublisher[IO](channel, exchange))
+      connection <- createConnection[F](rabbitMQConfig)
+      channel    <- createChannel[F](connection)
+      sqs <- Resource.make[F, AmazonSQS](AmazonSQSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build().pure[F])(
+              sqs => sqs.shutdown().pure[F])
+      sqsQueue <- Resource.liftF(LiveSQSQueue[F](sqs, s"message-bridge-$topic"))
+      responder = new LiveSQSResponder[F](sqsQueue)
+      processor = new ProcessToRabbitMQ[F](new ExchangePublisher[F](channel, exchange))
     } yield sqsQueue.stream(20, 2).evalMap(processor.apply).evalMap(responder.respond)
 
-  def createConnection(config: RabbitMQConfig): Resource[IO, Connection] =
+  def createConnection[F[_]: Applicative](config: RabbitMQConfig): Resource[F, Connection] =
     Resource.make {
       val connectionFactory = new ConnectionFactory()
       connectionFactory.setHost(config.host)
@@ -59,9 +63,9 @@ object Bridge {
       connectionFactory.setVirtualHost(config.vhost)
       connectionFactory.setUsername(config.username)
       connectionFactory.setPassword(config.password)
-      IO(connectionFactory.newConnection())
-    }(connection => IO(connection.close()))
+      connectionFactory.newConnection().pure[F]
+    }(connection => connection.close().pure[F])
 
-  def createChannel(connection: Connection): Resource[IO, Channel] =
-    Resource.make(IO(connection.createChannel()))(channel => IO(channel.close()))
+  def createChannel[F[_]: Applicative](connection: Connection): Resource[F, Channel] =
+    Resource.make(connection.createChannel().pure[F])(channel => channel.close().pure[F])
 }
