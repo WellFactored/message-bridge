@@ -1,13 +1,13 @@
 package mbr.application
 
-import cats.effect.{ExitCode, IO, IOApp, Resource}
+import cats.effect.{Blocker, ExitCode, IO, IOApp, Resource}
 import cats.implicits._
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
-import com.amazonaws.services.sns.AmazonSNSClientBuilder
+import com.amazonaws.services.sns.{AmazonSNS, AmazonSNSClientBuilder}
 import dev.profunktor.fs2rabbit.config.Fs2RabbitConfig
-import dev.profunktor.fs2rabbit.model.ExchangeName
+import dev.profunktor.fs2rabbit.interpreter.RabbitClient
+import dev.profunktor.fs2rabbit.model.{AMQPChannel, ExchangeName}
 import fs2.Stream
-import mbr.sns.SNSTopic
 
 final case class RabbitMQConfig(
   host:     String = "localhost",
@@ -47,21 +47,38 @@ object Main extends IOApp with IOLogging {
 
     val credentials = new ProfileCredentialsProvider("wellfactored")
 
-    val topics = SNSTopic.list[IO](AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build)
+    //val topics = SNSTopic.list[IO](AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build)
 
-    val configs = List(
+    val configs: List[BridgeConfig] = List(
       BridgeConfig(ExchangeName("events"), "events", fs2RabbitConfig, credentials),
-      BridgeConfig(ExchangeName("commands"), "commands", fs2RabbitConfig, credentials)
+      BridgeConfig(ExchangeName("commands"), "commands", fs2RabbitConfig, credentials),
+      BridgeConfig(ExchangeName("requests"), "requests", fs2RabbitConfig, credentials),
+      BridgeConfig(ExchangeName("responses"), "responses", fs2RabbitConfig, credentials)
     )
 
-    val bridges: Resource[IO, List[fs2.Stream[IO, Unit]]] = configs.map(Bridge.build[IO]).sequence
-    topics.evalMap(topic => logger.info(topic.arn)).compile.drain >>
-      bridges
-        .map {
-          case Nil          => Stream.empty
-          case head :: tail => tail.fold(head)(_.concurrently(_))
-        }
-        .use(_.compile.drain)
-        .as(ExitCode.Error)
+    def bridges(sns: AmazonSNS, client: RabbitClient[IO], channel: AMQPChannel): IO[List[fs2.Stream[IO, Unit]]] =
+      configs.traverse(config => Bridge.build[IO](client, channel, sns, config))
+
+    val resources = for {
+      blocker    <- Blocker[IO]
+      client     <- Resource.liftF(RabbitClient.apply[IO](fs2RabbitConfig, blocker))
+      connection <- client.createConnection
+      channel    <- client.createChannel(connection)
+      sns <- Resource.make[IO, AmazonSNS](AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build().pure[IO])(
+              sns => sns.shutdown().pure[IO])
+    } yield (sns, client, channel)
+
+    resources
+      .use {
+        case (sns, client, channel) =>
+          bridges(sns, client, channel)
+            .map {
+              case Nil =>
+                Stream.eval(logger.warn("No bridges are configured - exiting"))
+
+              case head :: tail => tail.fold(head)(_.concurrently(_)).compile.drain
+            }
+      }
+      .as(ExitCode.Error)
   }
 }
