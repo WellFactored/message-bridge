@@ -1,6 +1,6 @@
 val CirceVersion     = "0.12.3"
 val LogbackVersion   = "1.2.3"
-val awsClientVersion = "1.11.699"
+val awsClientVersion = "1.11.710"
 
 lazy val root = (project in file("."))
   .settings(
@@ -12,7 +12,7 @@ lazy val root = (project in file("."))
       "com.amazonaws" % "aws-java-sdk-sqs" % awsClientVersion,
       "com.amazonaws" % "aws-java-sdk-sns" % awsClientVersion,
       // Override 2.6 version used by AWS SQS library as there are security issues with it
-      "com.fasterxml.jackson.core" % "jackson-databind" % "2.10.1",
+      "com.fasterxml.jackson.core" % "jackson-databind" % "2.10.2",
       "io.circe"                   %% "circe-generic"   % CirceVersion,
       "io.circe"                   %% "circe-parser"    % CirceVersion,
       "com.rabbitmq"               % "amqp-client"      % "5.8.0",

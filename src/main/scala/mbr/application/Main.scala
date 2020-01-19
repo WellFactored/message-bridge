@@ -4,6 +4,7 @@ import cats.effect.{Blocker, ExitCode, IO, IOApp, Resource}
 import cats.implicits._
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
 import com.amazonaws.services.sns.{AmazonSNS, AmazonSNSClientBuilder}
+import com.amazonaws.services.sqs.{AmazonSQS, AmazonSQSClientBuilder}
 import dev.profunktor.fs2rabbit.config.Fs2RabbitConfig
 import dev.profunktor.fs2rabbit.interpreter.RabbitClient
 import dev.profunktor.fs2rabbit.model.{AMQPChannel, ExchangeName}
@@ -56,28 +57,34 @@ object Main extends IOApp with IOLogging {
       BridgeConfig(ExchangeName("responses"), "responses", fs2RabbitConfig, credentials)
     )
 
-    def bridges(sns: AmazonSNS, client: RabbitClient[IO], channel: AMQPChannel): IO[List[fs2.Stream[IO, Unit]]] =
-      configs.traverse(config => Bridge.build[IO](client, channel, sns, config))
+    def bridges(sqs: AmazonSQS, sns: AmazonSNS, client: RabbitClient[IO], channel: AMQPChannel): IO[List[fs2.Stream[IO, Unit]]] =
+      configs.traverse(config => Bridge.build[IO](client, channel, sqs, sns, config))
+
+    case class ApplicationResources(sqs: AmazonSQS, sns: AmazonSNS, client: RabbitClient[IO], channel: AMQPChannel)
 
     val resources = for {
       blocker    <- Blocker[IO]
       client     <- Resource.liftF(RabbitClient.apply[IO](fs2RabbitConfig, blocker))
       connection <- client.createConnection
       channel    <- client.createChannel(connection)
-      sns <- Resource.make[IO, AmazonSNS](AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build().pure[IO])(
-              sns => sns.shutdown().pure[IO])
-    } yield (sns, client, channel)
+      sns <- Resource.make[IO, AmazonSNS](IO(AmazonSNSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build())) { sns =>
+              IO(sns.shutdown())
+            }
+      sqs <- Resource.make[IO, AmazonSQS](IO(AmazonSQSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build())) { sqs =>
+              logger.info(s"shutting down sqs client") >>
+                IO(sqs.shutdown())
+            }
+    } yield ApplicationResources(sqs, sns, client, channel)
 
     resources
-      .use {
-        case (sns, client, channel) =>
-          bridges(sns, client, channel)
-            .map {
-              case Nil =>
-                Stream.eval(logger.warn("No bridges are configured - exiting"))
+      .use { res =>
+        bridges(res.sqs, res.sns, res.client, res.channel)
+          .flatMap {
+            case Nil =>
+              Stream.eval(logger.warn("No bridges are configured - exiting")).compile.drain
 
-              case head :: tail => tail.fold(head)(_.concurrently(_)).compile.drain
-            }
+            case head :: tail => tail.fold(head)(_.concurrently(_)).compile.drain
+          }
       }
       .as(ExitCode.Error)
   }
