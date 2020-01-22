@@ -1,6 +1,6 @@
 val CirceVersion     = "0.12.3"
 val LogbackVersion   = "1.2.3"
-val awsClientVersion = "1.11.710"
+val awsClientVersion = "1.11.712"
 
 lazy val root = (project in file("."))
   .settings(
@@ -12,18 +12,19 @@ lazy val root = (project in file("."))
       "com.amazonaws" % "aws-java-sdk-sqs" % awsClientVersion,
       "com.amazonaws" % "aws-java-sdk-sns" % awsClientVersion,
       // Override 2.6 version used by AWS SQS library as there are security issues with it
-      "com.fasterxml.jackson.core" % "jackson-databind" % "2.10.2",
-      "io.circe"                   %% "circe-generic"   % CirceVersion,
-      "io.circe"                   %% "circe-parser"    % CirceVersion,
-      "com.rabbitmq"               % "amqp-client"      % "5.8.0",
-      "dev.profunktor"             %% "fs2-rabbit"      % "2.1.1",
-      "com.monovore"               %% "decline"         % "1.0.0",
-      "io.chrisdavenport"          %% "log4cats-slf4j"  % "1.0.1",
-      "com.typesafe.scala-logging" %% "scala-logging"   % "3.9.2",
-      "ch.qos.logback"             % "logback-classic"  % LogbackVersion
+      "com.fasterxml.jackson.core" % "jackson-databind"  % "2.10.2",
+      "io.circe"                   %% "circe-generic"    % CirceVersion,
+      "io.circe"                   %% "circe-parser"     % CirceVersion,
+      "com.rabbitmq"               % "amqp-client"       % "5.8.0",
+      "com.olegpy"                 %% "meow-mtl-effects" % "0.4.0",
+      "dev.profunktor"             %% "fs2-rabbit"       % "2.1.1",
+      "com.monovore"               %% "decline"          % "1.0.0",
+      "io.chrisdavenport"          %% "log4cats-slf4j"   % "1.0.1",
+      "com.typesafe.scala-logging" %% "scala-logging"    % "3.9.2",
+      "ch.qos.logback"             % "logback-classic"   % LogbackVersion
     ),
-    addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full),
-    addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.3.1")
+    addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.11.0" cross CrossVersion.full),
+    addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.1")
   )
 
 scalacOptions ++= Seq(

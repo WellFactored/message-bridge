@@ -1,5 +1,7 @@
-package mbr.application
+package mbr
+package application
 
+import cats.data.{Chain, Writer}
 import cats.effect.{Blocker, ExitCode, IO, IOApp, Resource}
 import cats.implicits._
 import com.amazonaws.auth.profile.ProfileCredentialsProvider
@@ -9,6 +11,7 @@ import dev.profunktor.fs2rabbit.config.Fs2RabbitConfig
 import dev.profunktor.fs2rabbit.interpreter.RabbitClient
 import dev.profunktor.fs2rabbit.model.{AMQPChannel, ExchangeName}
 import fs2.Stream
+import com.olegpy.meow.effects._
 
 final case class RabbitMQConfig(
   host:     String = "localhost",
@@ -57,6 +60,8 @@ object Main extends IOApp with IOLogging {
       BridgeConfig(ExchangeName("responses"), "responses", fs2RabbitConfig, credentials)
     )
 
+    //implicit def logger[V]: Logger[IO] = Writer[Chain[LogEntry], V]
+
     def bridges(sqs: AmazonSQS, sns: AmazonSNS, client: RabbitClient[IO], channel: AMQPChannel): IO[List[fs2.Stream[IO, Unit]]] =
       configs.traverse(config => Bridge.build[IO](client, channel, sqs, sns, config))
 
@@ -71,7 +76,7 @@ object Main extends IOApp with IOLogging {
               IO(sns.shutdown())
             }
       sqs <- Resource.make[IO, AmazonSQS](IO(AmazonSQSClientBuilder.standard().withCredentials(credentials).withRegion("eu-west-1").build())) { sqs =>
-              logger.info(s"shutting down sqs client") >>
+              Log.info(s"shutting down sqs client") >>
                 IO(sqs.shutdown())
             }
     } yield ApplicationResources(sqs, sns, client, channel)
@@ -81,7 +86,7 @@ object Main extends IOApp with IOLogging {
         bridges(res.sqs, res.sns, res.client, res.channel)
           .flatMap {
             case Nil =>
-              Stream.eval(logger.warn("No bridges are configured - exiting")).compile.drain
+              Stream.eval(Log.warn("No bridges are configured - exiting")).compile.drain
 
             case head :: tail => tail.fold(head)(_.concurrently(_)).compile.drain
           }

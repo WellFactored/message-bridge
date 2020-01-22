@@ -1,10 +1,10 @@
-package mbr.application
+package mbr
+package application
 
 import cats.effect.{ConcurrentEffect, ContextShift}
 import cats.implicits._
 import com.amazonaws.services.sns.AmazonSNS
 import com.amazonaws.services.sqs.AmazonSQS
-import com.typesafe.scalalogging.StrictLogging
 import dev.profunktor.fs2rabbit.interpreter.RabbitClient
 import dev.profunktor.fs2rabbit.model.{AMQPChannel, ExchangeName, QueueName}
 import fs2.Stream
@@ -12,8 +12,8 @@ import mbr.rmq.{ExchangePublisher, RabbitMQConsumer, RabbitMQMessageProcessor}
 import mbr.sns.SNSPublisher
 import mbr.sqs.{LiveSQSQueue, LiveSQSResponder, ProcessToRabbitMQ}
 
-object Bridge extends StrictLogging {
-  def build[F[_]: ContextShift: ConcurrentEffect](
+object Bridge {
+  def build[F[_]: ContextShift: ConcurrentEffect: Logger](
     client:  RabbitClient[F],
     channel: AMQPChannel,
     sqs:     AmazonSQS,
@@ -27,7 +27,7 @@ object Bridge extends StrictLogging {
     } yield rabbitMQPipeline.concurrently(sqsPipeline)
   }
 
-  def initializeRabbitConsumer[F[_]: ContextShift: ConcurrentEffect](
+  def initializeRabbitConsumer[F[_]: ContextShift: ConcurrentEffect: Logger](
     client:   RabbitClient[F],
     channel:  AMQPChannel,
     sns:      AmazonSNS,
@@ -39,7 +39,7 @@ object Bridge extends StrictLogging {
       processor    = new RabbitMQMessageProcessor[F](acker, snsPublisher)
     } yield messageStream.evalMap(processor.process)
 
-  def initializeSQSConsumer[F[_]: ContextShift: ConcurrentEffect](
+  def initializeSQSConsumer[F[_]: ContextShift: ConcurrentEffect: Logger](
     client:   RabbitClient[F],
     channel:  AMQPChannel,
     sqs:      AmazonSQS,
